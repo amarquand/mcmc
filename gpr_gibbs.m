@@ -1,5 +1,16 @@
 function [stats] = gpr_gibbs(X, Y, opt)
 
+% Sample a spatial random effects model where the model is specified as 
+% a linear set of basis functions (currently an P degree polynomial
+% expanision) plus a spatial Gaussian process. The noise term is currently
+% an isotropic Gaussian.
+%
+% Written by A. Marquand
+%
+% Updates: 
+% 20/10/15: Initial implementation
+
+% Specify functions needed for the matlab compiler
 %# function covLIN
 %# function covLINard
 %# function covSEiso
@@ -87,7 +98,6 @@ stats.arate_cov   = zeros(1,opt.nGibbsIter);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 acc_cov_all = 0; gidx = 1:update_interval; 
 for g = 1:opt.nGibbsIter
-    %g
     % display output
     if mod(g,update_interval) == 0
         arate_cov     = acc_cov_all / update_interval;
@@ -128,7 +138,7 @@ for g = 1:opt.nGibbsIter
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % sample f
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
-    % compute & solve cholesky (alpha = inv(C)*y);
+    % compute & solve Cholesky (alpha = inv(C)*y);
     L_Ky  = chol(K+sn2*eye(N))';
     alpha = solve_chol(L_Ky',y-Phi*beta);
     
@@ -148,7 +158,7 @@ for g = 1:opt.nGibbsIter
     mu_beta_post   = Prec_beta_post\Phi'*(y-f);
     
     % sample from posterior    
-    L_Sb = chol(inv(Prec_beta_post)*sn2)';                  % FIXME
+    L_Sb = chol(inv(Prec_beta_post)*sn2)';          % FIXME: not efficient
     beta = mu_beta_post + L_Sb*randn(DPhi,1);
   
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -170,8 +180,9 @@ for g = 1:opt.nGibbsIter
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % sample lengthscale parameter(s)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    %nu = (L_Ky\f);
-    %f_new     = L_Kt_new*nu;
+    % whiten hyperparameters. Not needed if we integrate f out
+    %nu     = (L_Ky\f);
+    %f_new  = L_Kt_new*nu;
     logell = log(ell);
     
     % make a step in theta
