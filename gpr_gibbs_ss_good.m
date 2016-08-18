@@ -70,14 +70,14 @@ sn2   = Theta(parid+2);
 %t2    = sn2 / sf2;
 beta  = Theta(parid+3:end);  % theta is the first value sampled
 
-% compute initial covariance 
-if iscell(opt.CovFunc)
-    K  = feval(opt.CovFunc{:}, [log(ell); 0.5*log(sf2)], X)/sf2;
-else % old style
-    K  = feval(opt.CovFunc,X,Theta)/sf2;
-end
-% Cholesky decomposition (not including signal variance component)
-L_Ky = chol(K+sn2*eye(N))';
+% % compute initial covariance 
+% if iscell(opt.CovFunc)
+%     K  = feval(opt.CovFunc{:}, [log(ell); 0.5*log(sf2)], X)/sf2;
+% else % old style
+%     K  = feval(opt.CovFunc,X,Theta)/sf2;
+% end
+% % Cholesky decomposition (not including signal variance component)
+% L_Ky = chol(K+sn2*eye(N))';
 
 % initialize posteriors
 Theta_all  = zeros(size(Theta,1),opt.nGibbsIter);
@@ -89,25 +89,22 @@ stats.prior_theta = opt.PriorParam;
 stats.arate_ell   = zeros(1,opt.nGibbsIter);
 stats.arate_t2    = zeros(1,opt.nGibbsIter);
 
-% probability distributions
-logigam   = @(x,a,b) -(a+1).*x -b./x;
-logunif   = @(x,a,b) -log(x) - (x<a)/eps - (x>b)/eps;
-%unifpdf   = @(x,a,b) 1./sum(x) .* (x>a & x<b);
-%trigamrnd = @(c1,c2,a,b) 1./trgamrnd(c1,c2,a,b);
-invgam = @(x,a,b) b^a/gamma(a).*(1./x).^(a+1).*exp(-b./x);
+% log distributions
+%logigam   = @(x,a,b) -(a+1).*x -b./x;
+%logunif   = @(x,a,b) -log(x) - (x<a)/eps - (x>b)/eps;
 
 % prior and likelihood specification
-%prior_sf2 = @(sf2,a,b) logigam(sf2,a,b);
-%prior_sn2 = @(sn2,a,b) logigam(sn2,a,b);
-%prior_ell = @(ell,a,b) logunif(ell,a,b);
-lik_sf2   = @(sf2,ell,sn2,y,x,cov,L) likelihood_gaussian(y,x,[ell,sf2,sn2],cov);
-lik_sn2   = @(sn2,ell,sf2,y,x,cov,L) likelihood_gaussian(y,x,[ell,sf2,sn2],cov);
-lik_ell   = @(ell,sf2,sn2,y,x,cov,L) likelihood_gaussian(y,x,[ell,sf2,sn2],cov);
+prior_sf2 = @(sf2,a,b) logigam(sf2,a,b);
+prior_sn2 = @(sn2,a,b) logigam(sn2,a,b);
+prior_ell = @(ell,a,b) logunif(ell,a,b);
+lik_sf2   = @(sf2,ell,sn2,y,x,cov) likelihood_gaussian(y,x,[ell,sf2,sn2],cov);
+lik_sn2   = @(sn2,ell,sf2,y,x,cov) likelihood_gaussian(y,x,[ell,sf2,sn2],cov);
+lik_ell   = @(ell,sf2,sn2,y,x,cov) likelihood_gaussian(y,x,[ell,sf2,sn2],cov);
 
 % posteriors (only used if sampling from the posterior directly)
-%post_sf2  = @(sf2,ell,sn2,y,x,cov,a,b) likelihood_gaussian(y,x,[ell,sf2,sn2],cov) + prior_sf2(sf2,a,b);
-%post_sn2  = @(sn2,ell,sf2,y,x,cov,a,b) likelihood_gaussian(y,x,[ell,sf2,sn2],cov) + prior_sn2(sn2,a,b);
-%post_ell  = @(ell,sf2,sn2,y,x,cov,a,b) likelihood_gaussian(y,x,[ell,sf2,sn2],cov) + prior_ell(ell,a,b);
+post_sf2  = @(sf2,ell,sn2,y,x,cov,a,b) likelihood_gaussian(y,x,[ell,sf2,sn2],cov) + prior_sf2(sf2,a,b);
+post_sn2  = @(sn2,ell,sf2,y,x,cov,a,b) likelihood_gaussian(y,x,[ell,sf2,sn2],cov) + prior_sn2(sn2,a,b);
+post_ell  = @(ell,sf2,sn2,y,x,cov,a,b) likelihood_gaussian(y,x,[ell,sf2,sn2],cov) + prior_ell(ell,a,b);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Begin Gibbs Sampling Block
@@ -119,29 +116,29 @@ for g = 1:opt.nGibbsIter
         stats.iter               = g;
         
         if opt.PlotProgress, plot(Theta_all'); pause(0.1); end
-    end
-    
+    end 
+   
     % save output
     if mod(g,write_interval) == 0 && opt.WriteInterim && ...
-            isfield(opt,'OutputFilename') && ...
-            ~isempty(opt.OutputFilename)
+       isfield(opt,'OutputFilename') && ...
+       ~isempty(opt.OutputFilename)
         fprintf('Writing output ... ');
-        save([opt.OutputFilename,'stats'],'stats');
+        save([opt.OutputFilename,'stats'],'stats');       
         save([opt.OutputFilename,'Theta_all'],'Theta_all','-v7.3');
         fprintf('done.\n');
     end
-    
-    % slice sample using the likelihood
-    ell        = slice_sample(ell,lik_ell,[al_prior,bl_prior],sf2,sn2,y-Phi*beta,X,opt.CovFunc);
-    sf2        = slice_sample(sf2,lik_sf2,{@trinvgamrnd,[0,30],{af_prior,bf_prior}},ell,sn2,y-Phi*beta,X,opt.CovFunc);
-    [sn2,L_Ky] = slice_sample(sn2,lik_sn2,{@trinvgamrnd,[0,30],{an_prior,bn_prior}},ell,sf2,y-Phi*beta,X,opt.CovFunc);
+        
+   % slice sample the posterior directly
+    %sf2 = slice_sample(sf2,post_sf2,[0 20], ell,sn2,y-Phi*beta,X,opt.CovFunc,af_prior,bf_prior);
+    [sn2] = slice_sample(sn2,post_sn2,[0 20], ell,sf2,y-Phi*beta,X,opt.CovFunc,an_prior,bn_prior);
+    ell = slice_sample(ell,post_ell,[al_prior,bl_prior],sf2,sn2,y-Phi*beta,X,opt.CovFunc,al_prior,bl_prior);   
+      
+    sf2 = slice_sample(sf2,lik_sf2,{@trinvgamrnd,{af_prior,bf_prior}},ell,sn2,y-Phi*beta,X,opt.CovFunc);
+    %sn2 = slice_sample(sn2,lik_sn2,{@trinvgamrnd,{an_prior,bn_prior}},ell,sf2,y-Phi*beta,X,opt.CovFunc);
+    %ell = slice_sample(sn2,lik_ell,{unifrnd, {al_prior,bl_prior}},sf2,sn2,y-Phi*beta,X,opt.CovFunc);
  
-    % slice sample the posterior directly
-    %sf2  = slice_sample(sf2,post_sf2,[0 20], ell,sn2,y-Phi*beta,X,opt.CovFunc,af_prior,bf_prior);
-    %sn2  = slice_sample(sn2,post_sn2,[0 20], ell,sf2,y-Phi*beta,X,opt.CovFunc,an_prior,bn_prior);
-    %ell  = slice_sample(ell,post_ell,[al_prior,bl_prior],sf2,sn2,y-Phi*beta,X,opt.CovFunc,al_prior,bl_prior);
-    %K    = feval(opt.CovFunc{:}, [log(ell); log(sqrt(sf2))], X);
-    %L_Ky = chol(K+sn2*eye(N))';
+    K    = feval(opt.CovFunc{:}, [log(ell); log(sqrt(sf2))], X);
+    L_Ky = chol(K+sn2*eye(N))';
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % sample beta
@@ -152,6 +149,7 @@ for g = 1:opt.nGibbsIter
     % sample from posterior
     L_Sb = chol(inv(Prec_beta_post))';   % FIXME: not efficient
     beta = mu_beta_post + L_Sb*randn(DPhi,1);
+      
     
     % update Theta    
     Theta           = [ell; sf2; sn2; beta];
@@ -168,25 +166,37 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Private functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% function x = trinvgamrnd(l,u,a,b)
-% % sample from a truncated inverse gamma distribution
-% 
-% % check the range
-% if l < 0; l = 0; end
-% if u < 0; u = 1/eps; end
-% 
-% N = 10000;
-% 
-% ok = false;
-% for n = 1:N
-%     x = 1./gamrnd(a,1/b);
-%     x = x(x > l & x < u);
-%     if ~isempty(x)
-%         ok = true;
-%         break
-%     end
-% end
-% if ~ok
-%     error ('sampling from truncated Gamma failed');
-% end
-% end
+
+function y = logigam(x,a,b)
+% log inverse gamma pdf
+y = -(a+1).*x -b./x;
+end 
+
+function y = logunif(x,a,b)
+% log uniform pdf 
+y = -log(x) - (x<a)/eps - (x>b)/eps;
+end
+
+
+
+function x = trinvgamrnd(l,u,a,b,varargin)
+% sample from a truncated inverse gamma distribution
+
+if nargin > 4
+    dim = [varargin{:}];
+else
+    dim = [1 1];
+end
+
+N = 100000;
+
+%x = gamrnd(a,b,N,1);
+x = 1./gamrnd(a,1/b,N,1);
+x = x(x > l & x < u);
+if isempty(x)
+    error ('sampling from truncated Gamma failed');
+end
+x = x(1:prod(dim));
+x = reshape(x,dim);
+end
+
